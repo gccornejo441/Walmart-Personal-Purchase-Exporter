@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Walmart Personal Purchase Exporter",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Export your own Walmart purchase history into local CSV or JSON files. No accounts, payments or external servers.",
   "permissions": ["storage", "tabs"],
-  "host_permissions": ["https://www.walmart.com/*"],
   "action": {
     "default_title": "Walmart Personal Purchase Exporter",
     "default_popup": "popup.html"

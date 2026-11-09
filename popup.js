@@ -46,32 +46,7 @@ async function send(tabId, type) {
   }
 }
 
-function mergeSummary(existing, incoming) {
-  return {
-    ...existing,
-    id: incoming.id,
-    url: incoming.url || existing?.url || '',
-    date: incoming.date || existing?.date || '',
-    total: incoming.total || existing?.total || '',
-    summary: incoming.summary || existing?.summary || '',
-    source: incoming.source || existing?.source || '',
-    savedAt: existing?.savedAt || new Date().toISOString(),
-    items: existing?.items || [],
-    detailsComplete: Boolean(existing?.detailsComplete)
-  };
-}
-
-function mergeDetail(existing, details) {
-  const record = mergeSummary(existing, details);
-  for (const field of ['subtotal', 'tax', 'tip', 'status']) record[field] = details[field] || existing?.[field] || '';
-  record.lastAttemptedAt = new Date().toISOString();
-  if (details.items?.length) {
-    record.items = details.items;
-    record.detailsComplete = true;
-    record.detailsCapturedAt = new Date().toISOString();
-  }
-  return record;
-}
+const {mergeSummary, mergeDetail} = WalmartExportUtils;
 
 async function scan() {
   const tab = await currentTab();
@@ -154,10 +129,7 @@ async function fetchBatch() {
   await currentTab();
   const orders = await loadOrders();
   const max = Number($('batchSize').value) || 25;
-  const pending = Object.values(orders)
-    .filter(order => !order.detailsComplete && /^https:\/\/www\.walmart\.com\/orders\//.test(order.url || ''))
-    .sort((a, b) => (a.lastAttemptedAt || '').localeCompare(b.lastAttemptedAt || ''))
-    .slice(0, max);
+  const pending = WalmartExportUtils.pendingOrders(orders, max);
   if (!pending.length) {
     status('No pending saved order links. Scan the purchase history page first, or the visible orders are already itemized.');
     return;
@@ -170,7 +142,7 @@ async function fetchBatch() {
   try {
     for (let i = 0; i < pending.length && !shouldStop; i++) {
       const order = pending[i];
-      status(`Retrieving order ${i + 1} of ${pending.length}\n${order.id}\n${success} itemized, ${failed} not itemized`);
+      status(`Discovered: ${Object.keys(orders).length} · Processed this batch: ${success + failed}/${pending.length} · Succeeded: ${success} · Failed: ${failed} · Remaining: ${pending.length - i}`);
       try {
         if (!tab) tab = await chrome.tabs.create({url: order.url, active: false});
         else tab = await chrome.tabs.update(tab.id, {url: order.url});
@@ -185,7 +157,7 @@ async function fetchBatch() {
         await sleep(850);
       } catch (error) {
         failed++;
-        orders[order.id] = {...orders[order.id], lastAttemptedAt: new Date().toISOString()};
+        orders[order.id] = {...orders[order.id], lastAttemptedAt: new Date().toISOString(), extractionStatus: 'failed', extractionError: /sign in|verify the session/i.test(error.message) ? 'Walmart session requires attention' : 'Order details could not be read'};
         await saveOrders(orders);
         if (/sign in|verify the session/i.test(error.message)) {
           status(`Paused: ${error.message} Switch to Walmart and resolve the prompt, then retry.`);
@@ -193,28 +165,15 @@ async function fetchBatch() {
         }
       }
     }
-    if (!shouldStop) status(`Batch finished: ${success} orders itemized; ${failed} without detected items. Rerun to retry unmatched orders or open their printable receipts.`);
-    else status(`Stopped: ${success} orders itemized, ${failed} not itemized. Saved results were kept.`);
+    const remaining = WalmartExportUtils.pendingOrders(orders).length;
+    if (!shouldStop) status(`Batch finished: ${success} orders itemized; ${failed} incomplete or failed; ${remaining} remaining. Results are saved. Rerun to continue or retry unmatched orders.`);
+    else status(`Stopped: ${success} orders itemized, ${failed} incomplete or failed; ${remaining} remaining. Saved results were kept.`);
   } finally {
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch {}
     }
     busy(false);
   }
-}
-
-function spreadsheetSafe(value) {
-  const str = String(value ?? '');
-  return /^[\s\u0000-\u001f]*[=+@-]/.test(str) ? "'" + str : str;
-}
-
-function csvCell(value) {
-  const str = spreadsheetSafe(value);
-  return '"' + str.replace(/"/g, '""') + '"';
-}
-
-function csv(rows) {
-  return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
 function download(content, fileName, type) {
@@ -236,25 +195,22 @@ function fileStamp() {
 async function exportOrders() {
   const data = Object.values(await loadOrders());
   if (!data.length) throw new Error('No orders saved yet. Scan Walmart Purchase History first.');
-  const columns = ['Order ID', 'Purchase Date', 'Order Total', 'Subtotal', 'Tax', 'Tip', 'Status', 'Item Count', 'Item Details Captured', 'Order URL', 'Source'];
-  const rows = data.map(order => [order.id, order.date, order.total, order.subtotal, order.tax, order.tip, order.status, order.items?.length || 0, order.detailsComplete ? 'Yes' : 'No', order.url, order.source]);
-  download(csv([columns, ...rows]), `walmart-orders-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
-  status(`Exported ${rows.length} orders. Order totals appear once per order in this file.`);
+  download(WalmartExportUtils.ordersCsv(await loadOrders()), `walmart-orders-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
+  status(`Exported ${data.length} orders. Order totals appear once per order in this file.`);
 }
 
 async function exportItems() {
   const data = Object.values(await loadOrders());
-  const columns = ['Order ID', 'Purchase Date', 'Item Name', 'Quantity', 'Item Price', 'Item Status', 'Order URL', 'Extraction Source'];
-  const rows = data.flatMap(order => (order.items || []).map(item => [order.id, order.date, item.name, item.qty, item.price, item.status, order.url, item.source]));
-  if (!rows.length) throw new Error('No itemized receipts saved yet. Use Fetch itemized receipts or Save current receipt.');
-  download(csv([columns, ...rows]), `walmart-items-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
-  status(`Exported ${rows.length} item rows. Item Price is the amount displayed on Walmart; verify whether it is per-unit or line total before summing.`);
+  if (!data.some(order => order.items?.length)) throw new Error('No itemized receipts saved yet. Use Fetch itemized receipts or Save current receipt.');
+  const rows = WalmartExportUtils.uniqueItems(data);
+  download(WalmartExportUtils.itemsCsv(await loadOrders()), `walmart-items-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
+  status(`Exported ${rows.length} item rows. Ambiguous amounts are listed only as displayed prices.`);
 }
 
 async function exportJson() {
   const orders = await loadOrders();
   if (!Object.keys(orders).length) throw new Error('No orders saved yet.');
-  download(JSON.stringify({exportedAt: new Date().toISOString(), orders: Object.values(orders)}, null, 2), `walmart-purchases-${fileStamp()}.json`, 'application/json');
+  download(WalmartExportUtils.jsonBackup(orders), `walmart-purchases-${fileStamp()}.json`, 'application/json');
   status('JSON backup downloaded. Data also remains saved locally in Chrome.');
 }
 

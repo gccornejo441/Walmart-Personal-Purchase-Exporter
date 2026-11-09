@@ -1,0 +1,17 @@
+{
+  "name": "walmart-personal-purchase-exporter",
+  "version": "1.1.0",
+  "description": "A small, free Chrome / Microsoft Edge extension for exporting purchase history from your own signed-in Walmart.com account to CSV or JSON. No subscription, external service, analytics, network calls to third parties, or account password collection.",
+  "private": true,
+  "main": "content.js",
+  "scripts": {
+    "test": "node --test",
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  }
+}

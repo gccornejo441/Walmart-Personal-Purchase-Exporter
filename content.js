@@ -8,7 +8,9 @@
   }
 
   function text(element) {
-    return clean(element?.innerText || element?.textContent);
+    if (!element) return '';
+    if (element.innerText) return clean(element.innerText);
+    return clean([...element.childNodes].map(node => node.nodeType === 3 ? node.nodeValue : text(node)).join(' '));
   }
 
   function readFirst(root, selectors) {
@@ -109,7 +111,7 @@
 
   function findQuantity(value) {
     const found = clean(value).match(/\b(?:qty|quantity)\s*[:x]?\s*(\d+(?:\.\d+)?)/i);
-    return found?.[1] || '1';
+    return found?.[1] || '';
   }
 
   function printedItems() {
@@ -121,7 +123,7 @@
       const qty = findQuantity(description);
       const price = money(readFirst(head, ['[class*="price" i]', ':scope > :nth-child(2) > :nth-child(3)', ':scope > :nth-child(2)']) || description);
       const status = readFirst(head, ['[class*="status" i]', ':scope > :nth-child(2) > :first-child']);
-      if (name && name.length > 2) results.push({name, qty, price, status, source: 'printed-receipt'});
+      if (name && name.length > 2) results.push({name, qty, displayedPrice: price, unitPrice: qty === '1' ? price : '', lineTotal: '', productId: '', status, source: 'printed-receipt'});
     });
     return results;
   }
@@ -147,18 +149,25 @@
         '[class*="item-name" i]'
       ]);
       if (!name) continue;
-      const price = money(readFirst(node, ['[data-testid*="price" i]', '[class*="item-price" i]', '[class*="price" i]']) || description);
+      const priceNode = node.querySelector('[data-testid*="price" i], [class*="item-price" i], [class*="price" i]');
+      const price = money(text(priceNode) || description);
+      const lineTotal = money(readFirst(node, ['[data-testid*="line-total" i]', '[class*="line-total" i]']));
       const qty = findQuantity(description);
       const status = readFirst(node, ['[data-testid*="status" i]']);
-      if (!results.some(item => item.name === name && item.price === price && item.qty === qty)) {
-        results.push({name, qty, price, status, source: 'order-details'});
+      const productLink = node.querySelector('a[href*="/ip/"]');
+      const productId = productLink?.href.match(/\/ip\/(?:[^/]+\/)?(\d+)(?:[/?#]|$)/i)?.[1] || '';
+      const priceLabel = clean(priceNode?.getAttribute('aria-label') || priceNode?.getAttribute('data-testid') || priceNode?.className || '');
+      const isUnitPrice = /unit|each|per item/i.test(priceLabel);
+      const isLineTotal = /line|subtotal|total price/i.test(priceLabel);
+      if (!results.some(item => item.name === name && item.displayedPrice === price && item.qty === qty)) {
+        results.push({name, qty, displayedPrice: price, unitPrice: isUnitPrice || (price && qty === '1') ? price : '', lineTotal: lineTotal || (isLineTotal ? price : ''), productId, status, source: 'order-details'});
       }
     }
     return results;
   }
 
   function extractDetails() {
-    const pageText = clean(document.body?.innerText || '').slice(0, 120000);
+    const pageText = text(document.body).slice(0, 120000);
     const id = orderIdFromPath(location.href) ||
       readFirst(document, ['.print-bill-bar-id', '[data-testid="order-number"]']).match(/[\d-]{10,28}/)?.[0] ||
       findOrderId(pageText);
@@ -174,7 +183,7 @@
     const tip = findLabeledMoney(pageText, ['driver tip', 'tip']);
     const status = readFirst(document, ['[data-testid="order-status"]', '[data-testid="delivery-status"]']);
     const gated = /(?:sign in to (?:your|the) account|verify you are human|unusual traffic|access denied)/i.test(pageText.slice(0, 1800));
-    return {id, url: location.href, date, total, subtotal, tax, tip, status, items, gated, source: 'details'};
+    return {id, url: location.href, date, total, subtotal, tax, tip, status, items, gated, source: 'details', extractionStatus: items.length ? 'complete' : 'incomplete'};
   }
 
   function sleep(ms) {
@@ -227,4 +236,5 @@
       }
     }
   });
+  window.WalmartExporterParser = {getOrderCards, extractDetails, findQuantity, findDate, findLabeledMoney};
 })();
