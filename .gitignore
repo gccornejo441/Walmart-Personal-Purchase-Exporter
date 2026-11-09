@@ -1,0 +1,4 @@
+walmart-orders-*.csv
+walmart-items-*.csv
+walmart-purchases-*.json
+*.har
