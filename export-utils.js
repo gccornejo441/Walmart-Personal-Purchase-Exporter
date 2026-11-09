@@ -88,6 +88,7 @@
   function mergeDetail(existing, details, now = new Date().toISOString()) {
     const record = mergeSummary(existing, details, now);
     for (const field of ['subtotal', 'tax', 'tip', 'status']) record[field] = details[field] || existing?.[field] || '';
+    if (details.diagnostics) record.diagnostics = details.diagnostics;
     record.lastAttemptedAt = now;
     record.extractionAttemptedAt = now;
     record.extractionStatus = details.items?.length || existing?.detailsComplete ? 'complete' : 'incomplete';

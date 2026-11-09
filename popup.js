@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const buttons = ['scan', 'capture', 'fetch', 'exportOrders', 'exportItems', 'exportJson', 'clear'];
+const buttons = ['scan', 'capture', 'fetch', 'exportOrders', 'exportItems', 'exportJson', 'exportDiagnostics', 'clear'];
 let running = false;
 let shouldStop = false;
 
@@ -118,7 +118,7 @@ async function fetchDetail(tabId, expectedId) {
       last = result?.order || null;
       if (last?.gated) throw new Error('Walmart needs you to sign in or verify the session.');
       if (last?.id && last.id !== expectedId) continue;
-      if (last?.date && (last?.items?.length || retry >= 2)) return last;
+      if (last?.items?.length || (last?.date && retry >= 2)) return last;
       if (last?.items?.length && retry >= 2) return last;
     } catch (error) {
       if (/sign in|verify the session/i.test(error.message)) throw error;
@@ -149,11 +149,20 @@ async function fetchBatch() {
         if (!tab) tab = await chrome.tabs.create({url: order.url, active: false});
         else tab = await chrome.tabs.update(tab.id, {url: order.url});
         await awaitLoad(tab.id);
-        const detail = await fetchDetail(tab.id, order.id);
+        let detail = await fetchDetail(tab.id, order.id);
+        if (detail?.receiptUrl && !detail.items?.length) {
+          const receiptUrl = new URL(detail.receiptUrl);
+          if (receiptUrl.origin === 'https://www.walmart.com' && receiptUrl.pathname.startsWith('/orders/' + order.id + '/')) {
+            tab = await chrome.tabs.update(tab.id, {url: receiptUrl.href});
+            await awaitLoad(tab.id);
+            const receipt = await fetchDetail(tab.id, order.id);
+            if (receipt?.items?.length) detail = {...detail, ...receipt, date: receipt.date || detail.date, dateText: receipt.dateText || detail.dateText};
+          }
+        }
         if (!detail || (detail.id && detail.id !== order.id)) throw new Error('Order ID mismatch or page not ready.');
         const merged = mergeDetail(orders[order.id], detail);
         orders[order.id] = merged;
-        if (merged.detailsComplete && merged.date) success++;
+        if (merged.detailsComplete) success++;
         else failed++;
         await saveOrders(orders);
         await sleep(850);
@@ -169,8 +178,8 @@ async function fetchBatch() {
     }
     const remaining = WalmartExportUtils.pendingOrders(orders).length;
     const undated = Object.values(orders).filter(order => !order.date).length;
-    if (!shouldStop) status(`Batch finished: ${success} orders with items and verified dates; ${failed} incomplete; ${undated} without verified purchase dates; ${remaining} remaining. Results are saved. Rerun to continue or retry unmatched orders.`);
-    else status(`Stopped: ${success} orders with items and dates, ${failed} incomplete; ${undated} without verified dates; ${remaining} remaining. Saved results were kept.`);
+    if (!shouldStop) status(`Batch finished: ${success} itemized, ${failed} without detected items; ${undated} without verified purchase dates; ${remaining} remaining. If items remain missing, use the Diagnostics JSON button and check a printable receipt manually. Results are saved. Rerun to continue or retry unmatched orders.`);
+    else status(`Stopped: ${success} itemized, ${failed} without detected items; ${undated} without verified dates; ${remaining} remaining. Saved results were kept.`);
   } finally {
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch {}
@@ -218,6 +227,25 @@ async function exportJson() {
   status('JSON backup downloaded. Data also remains saved locally in Chrome.');
 }
 
+async function exportDiagnostics() {
+  const data = Object.values(await loadOrders());
+  if (!data.length) throw new Error('No scanned orders to diagnose.');
+  const records = data.map((order, index) => ({
+    row: index + 1,
+    dateStatus: order.dateStatus || 'missing',
+    extractionStatus: order.extractionStatus || 'unknown',
+    itemCount: order.items?.length || 0,
+    printedRows: Number(order.diagnostics?.printedRows || 0),
+    itemCards: Number(order.diagnostics?.itemCards || 0),
+    productLinks: Number(order.diagnostics?.productLinks || 0),
+    hasMain: Boolean(order.diagnostics?.hasMain),
+    hasPrintButton: Boolean(order.diagnostics?.hasPrintButton),
+    hasItemHeading: Boolean(order.diagnostics?.hasItemHeading)
+  }));
+  download(JSON.stringify({schemaVersion: 1, records}, null, 2), 'walmart-diagnostics-' + fileStamp() + '.json', 'application/json');
+  status('Saved a privacy-safe diagnostic report without product names, prices, order numbers, URLs, or account data.');
+}
+
 async function clearData() {
   if (!confirm('Delete every saved Walmart order and item from this extension on this computer?')) return;
   await chrome.storage.local.remove('ordersById');
@@ -241,6 +269,7 @@ attach('fetch', fetchBatch);
 attach('exportOrders', exportOrders);
 attach('exportItems', exportItems);
 attach('exportJson', exportJson);
+attach('exportDiagnostics', exportDiagnostics);
 attach('clear', clearData);
 $('stop').addEventListener('click', () => {
   shouldStop = true;

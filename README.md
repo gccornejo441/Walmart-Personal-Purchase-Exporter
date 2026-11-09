@@ -72,3 +72,13 @@ npm run package
 Automated tests use representative, local HTML fixtures; they do not prove Walmart's current live markup or account-specific access. Before relying on a full export, verify in your authenticated browser that the current order list and receipt pages expose the expected data. This project does not bypass CAPTCHA, authentication, or other Walmart controls. Walmart can change its site layout or access requirements at any time.
 
 Unofficial personal utility; not affiliated with Walmart.
+
+## Diagnosing missing item lists
+
+If an item batch reports **0 itemized orders**, the order pages loaded but the receipt rows may not have been rendered in the format the extension recognizes. Version 1.1.3 scrolls order details, expands item sections, recognizes product links within order item cards, and follows same-order printable receipt links when available. It will not click a Print button that opens a system print dialog.
+
+1. Retry a batch once after updating and reloading the extension in `chrome://extensions`.
+2. If no items appear, click **Diagnostics JSON**. This export contains only structural counts and statuses, not order numbers, prices, item names, or account information. Share this diagnostic JSON to guide the next fix.
+3. Open a specific order manually on Walmart and select the **Print** icon to see the itemized receipt. If Walmart opens a printable page within `/orders`, click **Save current receipt** there. If the print preview is system-only, the extension cannot read the print preview directly.
+
+A completed date does not mean the order has been successfully itemized. Look at the Itemized count separately from Date Status.

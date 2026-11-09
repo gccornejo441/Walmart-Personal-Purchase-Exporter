@@ -194,3 +194,41 @@ test('already itemized orders with no verified date remain eligible for date rep
   const record = {id: '12345678901234567890', url: 'https://www.walmart.com/orders/12345678901234567890/returns', date: 'Feb 5', items: [{name: 'Bread'}], detailsComplete: true};
   assert.equal(utils.pendingOrders({[record.id]: record}).length, 1);
 });
+
+
+test('extracts item names and quantities from printable Walmart receipt rows', () => {
+  const html = '<main><div class="print-bill-date">Oct 30, 2026 purchase</div><div class="print-items-list"><div><div>Great Value Milk</div><div><div>Delivered</div><div>Qty 2</div><div>$6.48</div></div></div></div></main>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders/200015179365152');
+  const receipt = api.extractDetails();
+  assert.equal(receipt.items.length, 1);
+  assert.equal(receipt.items[0].name, 'Great Value Milk');
+  assert.equal(receipt.items[0].qty, '2');
+  assert.equal(receipt.items[0].displayedPrice, '6.48');
+  assert.equal(receipt.date, '2026-10-30');
+  assert.equal(receipt.diagnostics.printedRows, 1);
+  dom.window.close();
+});
+
+test('extracts purchased items from linked product cards without old item selectors', () => {
+  const html = '<main><h1>Order details</h1><div>Order placed Oct 30, 2026</div><section aria-label="Purchased items"><div class="cart-product"><a href="/ip/paste/987654321">Toothpaste</a><span>Qty 2</span><span>$3.70</span></div></section><aside class="recommendations"><a href="/ip/advertisement/888888">Recommended lotion</a><div>$6.00</div></aside></main>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders/200015179365152');
+  const receipt = api.extractDetails();
+  assert.equal(receipt.items.length, 1);
+  assert.equal(receipt.items[0].name, 'Toothpaste');
+  assert.equal(receipt.items[0].qty, '2');
+  assert.equal(receipt.items[0].productId, '987654321');
+  assert.equal(receipt.items[0].unitPrice, '');
+  assert.equal(receipt.items[0].source, 'product-link-in-order');
+  dom.window.close();
+});
+
+test('diagnostics contain structural counts and omit purchase identifiers and prices', () => {
+  const html = '<main><div>Order placed Oct 30, 2026</div><div class="item-details">Not rendered</div></main>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders/200015179365152');
+  const receipt = api.extractDetails();
+  const saved = utils.mergeDetail(null, receipt);
+  assert.equal(saved.diagnostics.itemCards, 1);
+  assert.equal(saved.diagnostics.itemCount, 0);
+  assert.doesNotMatch(JSON.stringify(saved.diagnostics), /200015179365152|Oct 30|49\.06/);
+  dom.window.close();
+});

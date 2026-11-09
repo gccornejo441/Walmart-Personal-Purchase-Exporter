@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.3 - 2026-11-09
+
+- Added DOM extraction of product-linked item rows for order pages without the previous data-test selectors.
+- Improved parsing of printable receipt item names, quantities, and displayed prices.
+- Scrolls order detail pages and expands read-only item sections before extracting items.
+- Tries same-order receipt links when Walmart exposes a navigable printable page.
+- Added privacy-safe structural diagnostics export to diagnose missing item lists without exposing purchase details.
+- Clarified batch results to distinguish itemization from verified dates.
+- Added fixture-based regression coverage for printable receipts, linked product cards, and diagnostics.
+
 ## 1.1.2 - 2026-11-09
 
 - Fixed returns links being saved as receipt links; links now point to canonical order details, retaining store context when present.

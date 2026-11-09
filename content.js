@@ -136,15 +136,15 @@
 
   function printedItems() {
     const results = [];
-    document.querySelectorAll('.print-items-list').forEach(node => {
-      const head = node.children[0] || node;
-      const name = readFirst(head, [':scope > :first-child', '[class*="name" i]', '[class*="description" i]']);
-      const description = text(node);
-      const qty = findQuantity(description);
-      const price = money(readFirst(head, ['[class*="price" i]', ':scope > :nth-child(2) > :nth-child(3)', ':scope > :nth-child(2)']) || description);
-      const status = readFirst(head, ['[class*="status" i]', ':scope > :nth-child(2) > :first-child']);
+    for (const node of document.querySelectorAll('.print-items-list')) {
+      const row = node.children[0] || node;
+      const info = row.children[1];
+      const name = text(row.children[0]) || readFirst(row, ['[class*="name" i]', '[class*="description" i]']);
+      const qty = findQuantity(text(info?.children?.[1]) || text(node));
+      const price = money(text(info?.children?.[2]) || readFirst(row, ['[class*="price" i]']) || text(node));
+      const status = text(info?.children?.[0]) || '';
       if (name && name.length > 2) results.push({name, qty, displayedPrice: price, unitPrice: qty === '1' ? price : '', lineTotal: '', productId: '', status, source: 'printed-receipt'});
-    });
+    }
     return results;
   }
 
@@ -186,6 +186,69 @@
     return results;
   }
 
+  function anchorItems() {
+    const results = [];
+    const seen = new Set();
+    const anchors = document.querySelectorAll('main a[href*="/ip/"], [role="main"] a[href*="/ip/"], #maincontent a[href*="/ip/"]');
+    for (const anchor of anchors) {
+      if (anchor.closest('nav,header,footer,aside,[class*="recommend" i],[data-testid*="recommend" i],[data-testid*="suggest" i],[data-testid*="sponsor" i],[data-testid*="related" i]')) continue;
+      let link;
+      try { link = new URL(anchor.href, location.origin); } catch { continue; }
+      if (link.origin !== location.origin) continue;
+      const productId = link.pathname.match(/\/ip\/(?:[^/]+\/)?(\d+)(?:\/|$)/i)?.[1] || '';
+      let container = anchor;
+      let valid = null;
+      for (let depth = 0; depth < 6 && container.parentElement; depth++) {
+        container = container.parentElement;
+        if (container.matches('main, [role="main"], #maincontent')) break;
+        const description = text(container);
+        if (description.length > 1000) break;
+        const identities = new Set([...container.querySelectorAll('a[href*="/ip/"]')].map(node => node.href.match(/\/ip\/(?:[^/]+\/)?(\d+)(?:[/?#]|$)/i)?.[1] || node.href));
+        if (identities.size > 1) break;
+        if (container.matches('[data-testid*="item" i],[class*="order-item" i],[class*="receipt-item" i]') || /\b(?:Qty|Quantity|Purchased)\b/i.test(description) || /\$\s*\d/.test(description)) {
+          valid = container;
+          break;
+        }
+      }
+      if (!valid) continue;
+      const name = readFirst(valid, ['[data-testid*="product-name" i]', '[data-testid*="item-name" i]', '[itemprop="name"]', '[class*="product-name" i]', '[class*="item-name" i]']) || text(anchor) || clean(anchor.querySelector('img[alt]')?.alt);
+      if (!name || name.length < 3 || name.length > 250) continue;
+      const description = text(valid);
+      const qty = findQuantity(description);
+      const displayedPrice = money(readFirst(valid, ['[data-testid*="unit-price" i]', '[data-testid*="price" i]', '[class*="item-price" i]', '[class*="price" i]']) || description);
+      const lineTotal = money(readFirst(valid, ['[data-testid*="line-total" i]', '[class*="line-total" i]']));
+      const key = [productId, name, qty, displayedPrice].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({name, qty, displayedPrice, lineTotal, unitPrice: '', productId, status: '', source: 'product-link-in-order'});
+    }
+    return results;
+  }
+
+  function findReceiptUrl(id) {
+    if (!id) return '';
+    for (const link of document.querySelectorAll('a[href]')) {
+      if (!/(?:print|receipt)/i.test(text(link) + ' ' + (link.getAttribute('aria-label') || ''))) continue;
+      try {
+        const candidate = new URL(link.href, location.origin);
+        if (candidate.origin === location.origin && orderIdFromPath(candidate.href) === id && /(?:print|receipt)/i.test(candidate.pathname)) return candidate.href;
+      } catch {}
+    }
+    return '';
+  }
+
+  function itemDiagnostics(items) {
+    return {
+      printedRows: document.querySelectorAll('.print-items-list').length,
+      itemCards: document.querySelectorAll('[data-testid*="order-item" i],[data-testid*="line-item" i],[data-testid*="item-card" i],[data-testid*="item-row" i],[class*="order-item-card" i],[class*="item-details" i]').length,
+      productLinks: document.querySelectorAll('main a[href*="/ip/"],[role="main"] a[href*="/ip/"],#maincontent a[href*="/ip/"]').length,
+      itemCount: items.length,
+      hasMain: !!document.querySelector('main,[role="main"],#maincontent'),
+      hasPrintButton: [...document.querySelectorAll('button,[role="button"]')].some(b => /\bprint\b/i.test(text(b) + ' ' + (b.getAttribute('aria-label') || ''))),
+      hasItemHeading: [...document.querySelectorAll('h1,h2,h3,h4')].some(b => /^(?:items|items purchased|order items|products|receipt)$/i.test(text(b)))
+    };
+  }
+
   function extractDetails() {
     const pageText = text(document.body).slice(0, 120000);
     const id = orderIdFromPath(location.href) ||
@@ -196,6 +259,7 @@
     const totalFromPrinted = totalContainer ? money(text(totalContainer.lastElementChild || totalContainer)) : '';
     const items = printedItems();
     if (!items.length) items.push(...normalItems());
+    if (!items.length) items.push(...anchorItems());
     const pageDate = findDateInNode(document, pageText.slice(0, 5000));
     const dateText = normalizePurchaseDate(printedDate) ? printedDate : normalizePurchaseDate(pageDate) ? pageDate : printedDate || pageDate;
     const date = normalizePurchaseDate(dateText);
@@ -208,7 +272,8 @@
     return {
       id, url: canonicalOrderUrl(location.href, id), date, dateText,
       dateStatus: date ? 'complete' : dateText ? 'partial' : 'missing',
-      total, subtotal, tax, tip, status, items, gated, source: 'details',
+      total, subtotal, tax, tip, status, items, gated,
+      receiptUrl: items.length ? '' : findReceiptUrl(id), diagnostics: itemDiagnostics(items), source: 'details',
       extractionStatus: items.length ? 'complete' : 'incomplete'
     };
   }
@@ -256,12 +321,22 @@
       return true;
     }
     if (request.type === 'READ_ORDER') {
-      try {
-        sendResponse({order: extractDetails()});
-      } catch (error) {
-        sendResponse({error: error.message});
-      }
+      (async () => {
+        const scrollY = window.scrollY;
+        try {
+          for (let i = 0; i < 3; i++) {
+            const buttons = [...document.querySelectorAll('button,[role="button"]')].filter(button => !button.disabled && /^(?:show|view|see|load)\s+(?:(?:all|more)\s+)?(?:items|products)(?:\s*\(\d+\))?$/i.test(text(button)));
+            for (const button of buttons.slice(0, 3)) button.click();
+            window.scrollTo(0, Math.round(document.documentElement.scrollHeight * (i + 1) / 3));
+            await sleep(450);
+          }
+          return extractDetails();
+        } finally {
+          window.scrollTo(0, scrollY);
+        }
+      })().then(order => sendResponse({order})).catch(error => sendResponse({error: error.message}));
+      return true;
     }
   });
-  window.WalmartExporterParser = {getOrderCards, extractDetails, findQuantity, findDate, findDateInNode, findLabeledMoney};
+  window.WalmartExporterParser = {getOrderCards, extractDetails, printedItems, normalItems, anchorItems, itemDiagnostics, findQuantity, findDate, findDateInNode, findLabeledMoney};
 })();
