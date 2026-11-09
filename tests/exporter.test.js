@@ -102,16 +102,18 @@ test('item CSV rows de-duplicate repeated items and keep unknown prices blank', 
 
 test('interrupted batch resumes from persisted incomplete orders and retains completed data', () => {
   let store = {};
+  const firstId = '11111111111111111111';
+  const secondId = '22222222222222222222';
   const scanned = [
-    {id: 'a', url: 'https://www.walmart.com/orders/a', date: 'Jan 1'},
-    {id: 'b', url: 'https://www.walmart.com/orders/b', date: 'Jan 2'}
+    {id: firstId, url: 'https://www.walmart.com/orders/' + firstId, date: '2025-01-01'},
+    {id: secondId, url: 'https://www.walmart.com/orders/' + secondId, date: '2025-01-02'}
   ];
   for (const order of scanned) store[order.id] = utils.mergeSummary(store[order.id], order, '2025-01-01T00:00:00.000Z');
-  store.a = utils.mergeDetail(store.a, {id: 'a', items: [{name: 'saved'}]}, '2025-01-01T00:01:00.000Z');
+  store[firstId] = utils.mergeDetail(store[firstId], {id: firstId, date: '2025-01-01', items: [{name: 'saved'}]}, '2025-01-01T00:01:00.000Z');
   store = JSON.parse(JSON.stringify(store));
-  assert.deepEqual(utils.pendingOrders(store).map(order => order.id), ['b']);
-  assert.equal(store.a.items[0].name, 'saved');
-  assert.equal(store.b.extractionStatus, 'summary-only');
+  assert.deepEqual(utils.pendingOrders(store).map(order => order.id), [secondId]);
+  assert.equal(store[firstId].items[0].name, 'saved');
+  assert.equal(store[secondId].extractionStatus, 'summary-only');
 });
 
 
