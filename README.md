@@ -4,7 +4,7 @@ A free, local only Chrome and Microsoft Edge extension for exporting purchase hi
 
 ## Install in Chrome
 
-1. Download the [latest release ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/releases) or download this repository ZIP and extract it.
+1. Download the [v1.1.0 extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.0.zip) or download this repository ZIP and extract it.
 2. Open `chrome://extensions`.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder that contains `manifest.json`. For a release ZIP, extract it first.
@@ -12,7 +12,7 @@ A free, local only Chrome and Microsoft Edge extension for exporting purchase hi
 
 ## Install in Microsoft Edge
 
-1. Download and extract the release ZIP.
+1. Download and extract the [v1.1.0 extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.0.zip).
 2. Open `edge://extensions`.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
