@@ -24,6 +24,14 @@ test('discovers orders and parses date and total from history cards', () => {
   dom.window.close();
 });
 
+test('finds dates in machine-readable time elements and accepts a date without a year', () => {
+  const html = '<article data-testid="order-card"><a href="/orders/22345678901234567890">Order</a><time datetime="2024-12-02"></time></article>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders');
+  assert.equal(api.getOrderCards()[0].date, '2024-12-02');
+  assert.equal(api.findDate('Order placed Nov 9'), 'Nov 9');
+  dom.window.close();
+});
+
 test('combines multiple history pages incrementally without duplicate order IDs', () => {
   const one = parser(fixture('history-page-1.html'), 'https://www.walmart.com/orders');
   const two = parser(fixture('history-page-2.html'), 'https://www.walmart.com/orders');

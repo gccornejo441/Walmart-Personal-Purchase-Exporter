@@ -1,6 +1,6 @@
 (() => {
   const orderPath = /^\/orders\/([A-Za-z0-9-]{8,})(?:\/|$)/i;
-  const datePattern = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+\\d{1,2},?\\s+\\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}';
+  const datePattern = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+\\d{1,2}(?:,?\\s+\\d{4})?|\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?|\\d{4}-\\d{2}-\\d{2}';
   const dollarPattern = /-?\$\s*([\d,]+(?:\.\d{2})?)/;
 
   function clean(value) {
@@ -46,6 +46,18 @@
     return clean(labeled?.[1] || normalized.match(new RegExp(datePattern, 'i'))?.[0] || '');
   }
 
+  function findDateInNode(root, fallbackText = '') {
+    const direct = findDate(fallbackText);
+    if (direct) return direct;
+    for (const node of root?.querySelectorAll?.('time[datetime], [data-testid*="date" i], [aria-label*="date" i]') || []) {
+      for (const candidate of [node.getAttribute('datetime'), node.getAttribute('aria-label'), text(node)]) {
+        const found = findDate(candidate);
+        if (found) return found;
+      }
+    }
+    return '';
+  }
+
   function findLabeledMoney(value, labels) {
     const normalized = clean(value);
     for (const label of labels) {
@@ -83,7 +95,7 @@
         cards.push({
           id,
           url,
-          date: findDate(cardText),
+          date: findDateInNode(card, cardText),
           total: findLabeledMoney(cardText, ['order total', 'total', 'charged']),
           summary: cardText.slice(0, 180),
           source: 'history'
@@ -100,7 +112,7 @@
       cards.push({
         id,
         url: new URL('/orders/' + encodeURIComponent(id), location.origin).href,
-        date: findDate(content),
+        date: findDateInNode(node, content),
         total: findLabeledMoney(content, ['order total', 'total', 'charged']),
         summary: content.slice(0, 180),
         source: 'history-guessed-url'
@@ -176,7 +188,7 @@
     const totalFromPrinted = totalContainer ? money(text(totalContainer.lastElementChild || totalContainer)) : '';
     const items = printedItems();
     if (items.length === 0) items.push(...normalItems());
-    const date = findDate(printedDate) || findDate(pageText.slice(0, 5000));
+    const date = findDateInNode(document, printedDate) || findDate(pageText.slice(0, 5000));
     const total = totalFromPrinted || findLabeledMoney(pageText, ['order total', 'total paid', 'charged', 'grand total']);
     const subtotal = findLabeledMoney(pageText, ['subtotal', 'items subtotal']);
     const tax = findLabeledMoney(pageText, ['estimated tax', 'tax']);
@@ -236,5 +248,5 @@
       }
     }
   });
-  window.WalmartExporterParser = {getOrderCards, extractDetails, findQuantity, findDate, findLabeledMoney};
+  window.WalmartExporterParser = {getOrderCards, extractDetails, findQuantity, findDate, findDateInNode, findLabeledMoney};
 })();

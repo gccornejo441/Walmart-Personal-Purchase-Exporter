@@ -21,14 +21,14 @@
     <section class="panel">
       <div class="step">STEP 1</div>
       <h2>Collect your orders</h2>
-      <p>On <a href="https://www.walmart.com/orders" target="_blank" rel="noopener">Walmart Purchase History</a>, scan the loaded list. Scroll through any extra pages and scan again.</p>
+      <p>First, open <a href="https://www.walmart.com/orders" target="_blank" rel="noopener">Walmart Purchase History</a> and sign in normally. Leave that page open, return here, and click <strong>Scan purchase history</strong>.</p>
       <button id="scan" class="primary">Scan purchase history</button>
       <button id="capture" class="secondary">Save current receipt</button>
     </section>
     <section class="panel">
       <div class="step">STEP 2</div>
       <h2>Retrieve item details</h2>
-      <p>Opens saved order links one at a time in a background tab. Keep this popup open during the batch.</p>
+      <p>Do this before exporting an item list. It opens each saved order briefly to look for its receipt. Keep this window open while it works. If you only want the order list, skip this step.</p>
       <div class="setting"><label for="batchSize">Orders per batch</label><select id="batchSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></div>
       <button id="fetch" class="primary">Fetch itemized receipts</button>
       <button id="stop" class="secondary" disabled>Stop batch</button>
@@ -36,6 +36,7 @@
     <section class="panel">
       <div class="step">STEP 3</div>
       <h2>Export</h2>
+      <p><strong>Orders CSV</strong> is the spreadsheet of purchases. For products within each purchase, first fetch receipts, then choose <strong>Items CSV</strong>. JSON backup saves all collected details.</p>
       <div class="button-grid">
         <button id="exportOrders" class="secondary">Orders CSV</button>
         <button id="exportItems" class="secondary">Items CSV</button>

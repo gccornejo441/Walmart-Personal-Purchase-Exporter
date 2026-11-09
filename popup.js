@@ -58,7 +58,8 @@ async function scan() {
     const orders = await loadOrders();
     for (const entry of result.orders || []) orders[entry.id] = mergeSummary(orders[entry.id], entry);
     await saveOrders(orders);
-    status(`${result.message || 'Scan completed.'}\n${Object.keys(orders).length} orders saved in total. If Walmart has additional history pages, open each one and scan again.`);
+    const missingDates = Object.values(orders).filter(order => !order.date).length;
+    status(`${result.message || 'Scan completed.'}\n${Object.keys(orders).length} orders saved; ${missingDates} have no date yet. Missing dates can sometimes be filled when you fetch receipt details.`);
   } finally {
     busy(false);
   }
@@ -201,7 +202,7 @@ async function exportOrders() {
 
 async function exportItems() {
   const data = Object.values(await loadOrders());
-  if (!data.some(order => order.items?.length)) throw new Error('No itemized receipts saved yet. Use Fetch itemized receipts or Save current receipt.');
+  if (!data.some(order => order.items?.length)) throw new Error('No item receipts have been saved yet. First click Scan purchase history, then Fetch itemized receipts. Or open an order receipt on Walmart and click Save current receipt.');
   const rows = WalmartExportUtils.uniqueItems(data);
   download(WalmartExportUtils.itemsCsv(await loadOrders()), `walmart-items-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
   status(`Exported ${rows.length} item rows. Ambiguous amounts are listed only as displayed prices.`);

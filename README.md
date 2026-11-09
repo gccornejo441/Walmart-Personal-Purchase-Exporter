@@ -4,7 +4,7 @@ A free, local only Chrome and Microsoft Edge extension for exporting purchase hi
 
 ## Install in Chrome
 
-1. Download the [v1.1.0 extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.0.zip) or download this repository ZIP and extract it.
+1. Download the [extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.1.zip) or download this repository ZIP and extract it.
 2. Open `chrome://extensions`.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder that contains `manifest.json`. For a release ZIP, extract it first.
@@ -12,19 +12,26 @@ A free, local only Chrome and Microsoft Edge extension for exporting purchase hi
 
 ## Install in Microsoft Edge
 
-1. Download and extract the [v1.1.0 extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.0.zip).
+1. Download and extract the [extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.1.zip).
 2. Open `edge://extensions`.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
 5. Pin the extension and open Walmart Purchase History in a signed-in tab.
 
-## Use
+## Use it, step by step
 
-1. On Walmart Purchase History, click **Scan purchase history**. The extension scrolls the currently open history page and attempts to reveal dynamically loaded orders.
-2. Visit any additional history pages or date ranges Walmart makes available, and scan each one. Previously saved orders are retained and merged using their order IDs.
-3. Choose **Fetch itemized receipts** to process saved order links in batches. Results save locally after each order, so closing or interrupting the popup leaves completed work available. Retry later to resume incomplete/failed orders.
-4. For an order the automated extractor cannot itemize, open its receipt or printable receipt in Walmart and use **Save current receipt**.
-5. Export **Orders CSV**, **Items CSV**, or **JSON backup**. CSVs are UTF-8 with a BOM for Excel. Use **Clear data** to delete locally stored records.
+1. Open Walmart Purchase History and sign in on Walmart as you normally do. Leave that tab open.
+2. Click the extension button near your browser's address bar. If you do not see it, click the puzzle piece icon and choose **Walmart Personal Purchase Exporter**.
+3. In the small extension window, click **Scan purchase history**. Wait for the message that scanning is finished. If Walmart shows more history on another page or date range, open it and scan again.
+4. To make a spreadsheet listing your purchases, click **Orders CSV**. This is the basic order list; it does not need item receipts first.
+5. To make a spreadsheet listing the products inside each purchase, click **Fetch itemized receipts** first. Keep the extension window open while it visits orders. When it says the batch is finished, click **Items CSV**. If there are more than 25 orders, click **Fetch itemized receipts** again to continue the next batch.
+6. Choose **JSON backup** if you want one file containing everything collected so far. It is a backup file rather than the regular spreadsheet.
+
+If you click **Items CSV** before fetching any receipts, you will see: “No item receipts have been saved yet.” That means no product details have been collected yet. Click **Fetch itemized receipts**, wait for it to finish, then click **Items CSV**. Orders CSV and Items CSV are different files for different purposes.
+
+If a date is blank in Orders CSV, Walmart did not show a date in the order card the extension could read. Try **Fetch itemized receipts**, which may find the date on the individual order page, then download **Orders CSV** again. If it is still blank, that order page did not expose a readable date; the extension leaves it blank rather than guessing. After scanning, the extension also tells you how many saved orders have no date yet.
+
+For an order that still has no item rows, open that order on Walmart and, if available, its printable receipt. Then click **Save current receipt** in the extension. Results are saved after each order, so completed work remains on your computer if you stop and continue later. Use **Clear data** only if you want to delete the saved purchases from this browser.
 
 The orders CSV contains one row per order. The items CSV distinguishes a confirmed unit price and line total; where Walmart's page does not make the amount clear, those columns remain blank and the displayed amount is preserved separately. The extension does not invent missing data.
 
@@ -38,7 +45,7 @@ npm test
 npm run package
 ```
 
-`npm run package` creates `releases/walmart-personal-purchase-exporter-v1.1.0.zip`, containing only the unpacked extension files. Load the project folder directly during development.
+`npm run package` creates a versioned ZIP in `releases/`, containing only the unpacked extension files. Load the project folder directly during development.
 
 ## Privacy
 
