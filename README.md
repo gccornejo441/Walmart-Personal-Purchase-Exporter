@@ -4,7 +4,7 @@ A small, free Chrome / Microsoft Edge extension for exporting purchase history f
 
 ## Installation
 
-1. Unzip `walmart-personal-exporter.zip` into a folder you intend to keep.
+1. From GitHub, select **Code → Download ZIP** and extract it into a folder you intend to keep. Alternatively, clone this repository with Git.
 2. Go to `chrome://extensions` in Google Chrome, or `edge://extensions` in Microsoft Edge.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
@@ -45,5 +45,7 @@ This is a first version, **not yet tested against a logged-in Walmart account**.
 - There is no automatic Excel `.xlsx` generator; export CSV and open it in Excel.
 
 If order collection or receipt extraction fails, capture the Walmart screen showing the order history or print receipt layout, with personal identifiers removed, and use it to update the selectors.
+
+**Do not commit exported purchase CSV/JSON files or personal receipts to this repository, especially if it is public.**
 
 This tool is unofficial and is not affiliated with Walmart.
