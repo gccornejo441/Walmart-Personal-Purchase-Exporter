@@ -4,15 +4,15 @@ A free, local only Chrome and Microsoft Edge extension for exporting purchase hi
 
 ## Install in Chrome
 
-1. Download the [extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.1.zip) or download this repository ZIP and extract it.
+1. Download the [latest source ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/archive/refs/heads/main.zip) or download this repository ZIP and extract it.
 2. Open `chrome://extensions`.
 3. Turn on **Developer mode**.
-4. Select **Load unpacked** and choose the extracted folder that contains `manifest.json`. For a release ZIP, extract it first.
+4. Select **Load unpacked** and choose the extracted folder that contains `manifest.json`. For the source ZIP, open the nested `Walmart-Personal-Purchase-Exporter-main` folder.
 5. Pin the extension, then visit [Walmart Purchase History](https://www.walmart.com/orders) in a tab where you are already signed in.
 
 ## Install in Microsoft Edge
 
-1. Download and extract the [extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/releases/walmart-personal-purchase-exporter-v1.1.1.zip).
+1. Download and extract the [extension ZIP](https://github.com/gccornejo441/Walmart-Personal-Purchase-Exporter/raw/refs/heads/main/archive/refs/heads/main.zip).
 2. Open `edge://extensions`.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the extracted folder containing `manifest.json`.
@@ -29,7 +29,7 @@ A free, local only Chrome and Microsoft Edge extension for exporting purchase hi
 
 If you click **Items CSV** before fetching any receipts, you will see: “No item receipts have been saved yet.” That means no product details have been collected yet. Click **Fetch itemized receipts**, wait for it to finish, then click **Items CSV**. Orders CSV and Items CSV are different files for different purposes.
 
-If a date is blank in Orders CSV, Walmart did not show a date in the order card the extension could read. Try **Fetch itemized receipts**, which may find the date on the individual order page, then download **Orders CSV** again. If it is still blank, that order page did not expose a readable date; the extension leaves it blank rather than guessing. After scanning, the extension also tells you how many saved orders have no date yet.
+**Dates are exported as `YYYY-MM-DD` only when the year is verified.** If Walmart shows just `Jan 31` or `Feb 5`, the purchase date stays blank until receipt details provide a full date. Orders CSV includes **Date Status** and **Original Date Text** to distinguish missing dates from partial ones. Click **Fetch itemized receipts** to repair missing or partial dates, then export Orders CSV again. Existing saved `/returns` links are automatically converted to order-detail links on load.
 
 For an order that still has no item rows, open that order on Walmart and, if available, its printable receipt. Then click **Save current receipt** in the extension. Results are saved after each order, so completed work remains on your computer if you stop and continue later. Use **Clear data** only if you want to delete the saved purchases from this browser.
 
@@ -45,7 +45,7 @@ npm test
 npm run package
 ```
 
-`npm run package` creates a versioned ZIP in `releases/`, containing only the unpacked extension files. Load the project folder directly during development.
+`npm run package` creates a versioned ZIP in `releases/` on Windows with PowerShell, containing only the unpacked extension files. GitHub Actions also generates a versioned ZIP artifact on each push. The latest source ZIP from GitHub can always be loaded unpacked. Load the project folder directly during development.
 
 ## Privacy
 
@@ -57,6 +57,8 @@ npm run package
 
 ## Troubleshooting
 
+- **Only a few orders found:** Walmart can show only part of your history behind a date range, filter, or pagination. Open other periods or pages in Purchase History and scan each one. An empty day does not necessarily mean a missing purchase.
+- **Dates are blank:** Use **Date Status** and **Original Date Text** in Orders CSV to identify partial dates. Fetch itemized receipts to check the full purchase date on the order page. A month/day without a year is deliberately left blank.
 - **No orders found:** Open `https://www.walmart.com/orders`, confirm the account is signed in, wait for the list to load, then scan. If Walmart separates history by pages/date filters, open each and scan.
 - **Cannot read the Walmart tab:** Reload the Walmart order page after installing or updating the extension, then retry.
 - **Receipt not itemized:** The page layout may not match current selectors. Open the order's printable receipt and use **Save current receipt**. Incomplete records remain saved and can be retried.

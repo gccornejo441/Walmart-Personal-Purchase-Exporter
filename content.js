@@ -2,6 +2,7 @@
   const orderPath = /^\/orders\/([A-Za-z0-9-]{8,})(?:\/|$)/i;
   const datePattern = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\s+\\d{1,2}(?:,?\\s+\\d{4})?|\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?|\\d{4}-\\d{2}-\\d{2}';
   const dollarPattern = /-?\$\s*([\d,]+(?:\.\d{2})?)/;
+  const {normalizePurchaseDate, canonicalOrderUrl} = window.WalmartExportUtils;
 
   function clean(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -47,18 +48,23 @@
   }
 
   function findDateInNode(root, fallbackText = '') {
-    const direct = findDate(fallbackText);
-    if (direct) return direct;
-    for (const node of root?.querySelectorAll?.('time[datetime], [data-testid*="date" i], [aria-label*="date" i]') || []) {
-      for (const candidate of [node.getAttribute('datetime'), node.getAttribute('aria-label'), text(node)]) {
-        const found = findDate(candidate);
-        if (found) return found;
+    const preferred = root?.querySelectorAll?.('[data-testid*="purchase-date" i], [data-testid*="order-date" i], [data-testid*="placed-date" i], [itemprop="orderDate"], .print-bill-date, time[datetime], [data-testid*="date" i]') || [];
+    const sourceText = clean(fallbackText);
+    const labeled = sourceText.match(new RegExp('(?:order\\s+placed|ordered\\s+on|placed\\s+on|purchase\\s+date|purchased\\s+on|store\\s+purchase|purchase)\\s*[:\\-]?\\s*(' + datePattern + ')', 'i'));
+    if (labeled && normalizePurchaseDate(labeled[1])) return labeled[1];
+    for (const node of preferred) {
+      if (node.closest?.('[data-testid*="delivery" i], [data-testid*="arrival" i], [class*="delivery-date" i]')) continue;
+      for (const candidate of [node.getAttribute('datetime'), node.getAttribute('content'), node.getAttribute('data-date'), node.getAttribute('title'), node.getAttribute('aria-label'), text(node)]) {
+        if (normalizePurchaseDate(candidate)) return candidate;
       }
     }
-    return '';
+    if (labeled) return labeled[1];
+    const unlabelled = findDate(sourceText);
+    if (unlabelled && /(?:arrives?|arriving|delivery|delivered|expected)\s*(?:on|by)?\s*$/i.test(sourceText.slice(Math.max(0, sourceText.indexOf(unlabelled) - 24), sourceText.indexOf(unlabelled)))) return '';
+    return unlabelled;
   }
 
-  function findLabeledMoney(value, labels) {
+    function findLabeledMoney(value, labels) {
     const normalized = clean(value);
     for (const label of labels) {
       const expression = new RegExp('(?:^|\\s)' + label + '\\s*[:\\-]?\\s*(-?\\$\\s*[\\d,]+(?:\\.\\d{2})?)', 'i');
@@ -68,60 +74,62 @@
     return '';
   }
 
-  function getOrderCards() {
-    const cards = [];
-    const seen = new Set();
-    const anchors = document.querySelectorAll('a[href]');
-    for (const anchor of anchors) {
-      const id = orderIdFromPath(anchor.href);
-      if (!id) continue;
-      let card = anchor.closest('[data-testid*="order" i], article, li, [class*="order-card" i], [class*="purchase-card" i]');
-      if (!card) {
-        card = anchor.parentElement;
-        for (let i = 0; i < 4 && card?.parentElement; i++) {
-          const candidate = card.parentElement;
-          const content = text(candidate);
-          if (content.length > 60 && content.length < 1600) {
-            card = candidate;
-            break;
-          }
-          card = candidate;
-        }
-      }
-      const cardText = text(card).slice(0, 3000);
-      const url = new URL(anchor.href, location.origin).href;
-      if (!seen.has(id)) {
-        seen.add(id);
-        cards.push({
-          id,
-          url,
-          date: findDateInNode(card, cardText),
-          total: findLabeledMoney(cardText, ['order total', 'total', 'charged']),
-          summary: cardText.slice(0, 180),
-          source: 'history'
-        });
+  function findCard(anchor, id) {
+    let current = anchor;
+    let best = anchor.parentElement || anchor;
+    let bestScore = -1;
+    for (let depth = 0; depth < 9 && current.parentElement && current.parentElement !== document.body; depth++) {
+      current = current.parentElement;
+      const description = text(current);
+      if (description.length > 4500) break;
+      const linkedIds = new Set([...current.querySelectorAll('a[href]')].map(node => orderIdFromPath(node.href)).filter(Boolean));
+      if (linkedIds.size > 1 || linkedIds.size === 1 && !linkedIds.has(id)) break;
+      const foundDate = findDateInNode(current, description);
+      const hasTotal = Boolean(findLabeledMoney(description, ['order total', 'total', 'charged']));
+      const score = Number(Boolean(foundDate)) * 5 + Number(Boolean(normalizePurchaseDate(foundDate))) * 4 +
+        Number(hasTotal) * 3 + Number(description.includes(id)) * 2 + Number(description.length > 60);
+      if (score > bestScore || score === bestScore && description.length < text(best).length) {
+        best = current;
+        bestScore = score;
       }
     }
-    const candidates = document.querySelectorAll('article, li, [data-testid*="order" i], [class*="order-card" i]');
-    for (const node of candidates) {
-      const content = text(node);
-      if (content.length < 25 || content.length > 2200) continue;
-      const id = findOrderId(content);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      cards.push({
-        id,
-        url: new URL('/orders/' + encodeURIComponent(id), location.origin).href,
-        date: findDateInNode(node, content),
-        total: findLabeledMoney(content, ['order total', 'total', 'charged']),
-        summary: content.slice(0, 180),
-        source: 'history-guessed-url'
-      });
-    }
-    return cards;
+    return best;
   }
 
-  function findQuantity(value) {
+  function getOrderCards() {
+    const found = new Map();
+    function remember(id, node, url, source) {
+      const description = text(node).slice(0, 4500);
+      const dateText = findDateInNode(node, description);
+      const date = normalizePurchaseDate(dateText);
+      const previous = found.get(id);
+      const next = {
+        id, url: canonicalOrderUrl(url, id), date: date || previous?.date || '',
+        dateText: dateText || previous?.dateText || '',
+        dateStatus: date || previous?.date ? 'complete' : dateText || previous?.dateText ? 'partial' : 'missing',
+        total: findLabeledMoney(description, ['order total', 'total', 'charged']) || previous?.total || '',
+        summary: description.slice(0, 180) || previous?.summary || '', source
+      };
+      if (!previous || date && !previous.date || next.total && !previous.total || description.length > previous.summary.length) found.set(id, next);
+    }
+    for (const anchor of document.querySelectorAll('a[href]')) {
+      const id = orderIdFromPath(anchor.href);
+      if (!id) continue;
+      remember(id, findCard(anchor, id), anchor.href, 'history');
+    }
+    for (const node of document.querySelectorAll('article, li, [data-testid*="order-card" i], [data-testid*="purchase-card" i], [class*="order-card" i]')) {
+      const description = text(node);
+      if (description.length < 25 || description.length > 4000) continue;
+      const id = findOrderId(description);
+      if (!id) continue;
+      const linkedIds = new Set([...node.querySelectorAll('a[href]')].map(anchor => orderIdFromPath(anchor.href)).filter(Boolean));
+      if (linkedIds.size > 1) continue;
+      if (!found.has(id) || !found.get(id).date || !found.get(id).total) remember(id, node, '/orders/' + encodeURIComponent(id), 'history-card');
+    }
+    return [...found.values()];
+  }
+
+    function findQuantity(value) {
     const found = clean(value).match(/\b(?:qty|quantity)\s*[:x]?\s*(\d+(?:\.\d+)?)/i);
     return found?.[1] || '';
   }
@@ -187,18 +195,25 @@
     const totalContainer = document.querySelector('.bill-order-total-payment');
     const totalFromPrinted = totalContainer ? money(text(totalContainer.lastElementChild || totalContainer)) : '';
     const items = printedItems();
-    if (items.length === 0) items.push(...normalItems());
-    const date = findDateInNode(document, printedDate) || findDate(pageText.slice(0, 5000));
+    if (!items.length) items.push(...normalItems());
+    const pageDate = findDateInNode(document, pageText.slice(0, 5000));
+    const dateText = normalizePurchaseDate(printedDate) ? printedDate : normalizePurchaseDate(pageDate) ? pageDate : printedDate || pageDate;
+    const date = normalizePurchaseDate(dateText);
     const total = totalFromPrinted || findLabeledMoney(pageText, ['order total', 'total paid', 'charged', 'grand total']);
     const subtotal = findLabeledMoney(pageText, ['subtotal', 'items subtotal']);
     const tax = findLabeledMoney(pageText, ['estimated tax', 'tax']);
     const tip = findLabeledMoney(pageText, ['driver tip', 'tip']);
     const status = readFirst(document, ['[data-testid="order-status"]', '[data-testid="delivery-status"]']);
     const gated = /(?:sign in to (?:your|the) account|verify you are human|unusual traffic|access denied)/i.test(pageText.slice(0, 1800));
-    return {id, url: location.href, date, total, subtotal, tax, tip, status, items, gated, source: 'details', extractionStatus: items.length ? 'complete' : 'incomplete'};
+    return {
+      id, url: canonicalOrderUrl(location.href, id), date, dateText,
+      dateStatus: date ? 'complete' : dateText ? 'partial' : 'missing',
+      total, subtotal, tax, tip, status, items, gated, source: 'details',
+      extractionStatus: items.length ? 'complete' : 'incomplete'
+    };
   }
 
-  function sleep(ms) {
+    function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 

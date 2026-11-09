@@ -1,0 +1,26 @@
+name: Validate and package extension
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check content.js
+      - run: node --check popup.js
+      - run: node --check export-utils.js
+      - run: npm test
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: walmart-personal-exporter
+          path: releases/walmart-personal-purchase-exporter-v*.zip
+          if-no-files-found: error

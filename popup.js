@@ -5,7 +5,7 @@ let shouldStop = false;
 
 async function loadOrders() {
   const saved = await chrome.storage.local.get('ordersById');
-  return saved.ordersById || {};
+  return WalmartExportUtils.normalizeSavedOrders(saved.ordersById || {});
 }
 
 async function saveOrders(orders) {
@@ -58,8 +58,8 @@ async function scan() {
     const orders = await loadOrders();
     for (const entry of result.orders || []) orders[entry.id] = mergeSummary(orders[entry.id], entry);
     await saveOrders(orders);
-    const missingDates = Object.values(orders).filter(order => !order.date).length;
-    status(`${result.message || 'Scan completed.'}\n${Object.keys(orders).length} orders saved; ${missingDates} have no date yet. Missing dates can sometimes be filled when you fetch receipt details.`);
+    const missingDates = Object.values(orders).filter(order => !WalmartExportUtils.normalizePurchaseDate(order.date)).length;
+    status(`${result.message || 'Scan completed.'}\n${Object.keys(orders).length} orders saved; ${missingDates} have no date yet. Missing or yearless dates are flagged until you fetch a receipt showing the complete purchase date.`);
   } finally {
     busy(false);
   }
@@ -118,7 +118,8 @@ async function fetchDetail(tabId, expectedId) {
       last = result?.order || null;
       if (last?.gated) throw new Error('Walmart needs you to sign in or verify the session.');
       if (last?.id && last.id !== expectedId) continue;
-      if (last?.items?.length) return last;
+      if (last?.date && (last?.items?.length || retry >= 2)) return last;
+      if (last?.items?.length && retry >= 2) return last;
     } catch (error) {
       if (/sign in|verify the session/i.test(error.message)) throw error;
     }
@@ -152,7 +153,7 @@ async function fetchBatch() {
         if (!detail || (detail.id && detail.id !== order.id)) throw new Error('Order ID mismatch or page not ready.');
         const merged = mergeDetail(orders[order.id], detail);
         orders[order.id] = merged;
-        if (merged.detailsComplete) success++;
+        if (merged.detailsComplete && merged.date) success++;
         else failed++;
         await saveOrders(orders);
         await sleep(850);
@@ -167,8 +168,9 @@ async function fetchBatch() {
       }
     }
     const remaining = WalmartExportUtils.pendingOrders(orders).length;
-    if (!shouldStop) status(`Batch finished: ${success} orders itemized; ${failed} incomplete or failed; ${remaining} remaining. Results are saved. Rerun to continue or retry unmatched orders.`);
-    else status(`Stopped: ${success} orders itemized, ${failed} incomplete or failed; ${remaining} remaining. Saved results were kept.`);
+    const undated = Object.values(orders).filter(order => !order.date).length;
+    if (!shouldStop) status(`Batch finished: ${success} orders with items and verified dates; ${failed} incomplete; ${undated} without verified purchase dates; ${remaining} remaining. Results are saved. Rerun to continue or retry unmatched orders.`);
+    else status(`Stopped: ${success} orders with items and dates, ${failed} incomplete; ${undated} without verified dates; ${remaining} remaining. Saved results were kept.`);
   } finally {
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch {}
@@ -197,7 +199,8 @@ async function exportOrders() {
   const data = Object.values(await loadOrders());
   if (!data.length) throw new Error('No orders saved yet. Scan Walmart Purchase History first.');
   download(WalmartExportUtils.ordersCsv(await loadOrders()), `walmart-orders-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
-  status(`Exported ${data.length} orders. Order totals appear once per order in this file.`);
+  const missing = data.filter(order => !order.date).length;
+  status(`Exported ${data.length} orders; ${missing} still lack a verified purchase date. Check Date Status and Original Date Text in the CSV, then fetch order details and export again.`);
 }
 
 async function exportItems() {

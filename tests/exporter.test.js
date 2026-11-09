@@ -10,6 +10,7 @@ const fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures', name), 
 function parser(html, url) {
   const dom = new JSDOM(html, {url, runScripts: 'outside-only'});
   dom.window.chrome = {runtime: {onMessage: {addListener() {}}}};
+  dom.window.eval(fs.readFileSync(path.join(root, 'export-utils.js'), 'utf8'));
   dom.window.eval(fs.readFileSync(path.join(root, 'content.js'), 'utf8'));
   return {dom, api: dom.window.WalmartExporterParser};
 }
@@ -19,7 +20,7 @@ test('discovers orders and parses date and total from history cards', () => {
   const orders = api.getOrderCards();
   assert.equal(orders.length, 2);
   assert.equal(orders[0].id, '12345678901234567890');
-  assert.match(orders[0].date, /Jan 4, 2025/i);
+  assert.equal(orders[0].date, '2025-01-04');
   assert.equal(orders[0].total, '42.18');
   dom.window.close();
 });
@@ -107,8 +108,87 @@ test('interrupted batch resumes from persisted incomplete orders and retains com
   ];
   for (const order of scanned) store[order.id] = utils.mergeSummary(store[order.id], order, '2025-01-01T00:00:00.000Z');
   store.a = utils.mergeDetail(store.a, {id: 'a', items: [{name: 'saved'}]}, '2025-01-01T00:01:00.000Z');
-  store = JSON.parse(JSON.stringify(store)); // extension/browser restart
+  store = JSON.parse(JSON.stringify(store));
   assert.deepEqual(utils.pendingOrders(store).map(order => order.id), ['b']);
   assert.equal(store.a.items[0].name, 'saved');
   assert.equal(store.b.extractionStatus, 'summary-only');
+});
+
+
+test('converts returns links into canonical detail links and preserves STORE context', () => {
+  const html = '<article data-testid="order-card"><h3>Oct 15, 2026</h3><a href="/orders/12345678901234567890/returns?orderSource=STORE">Start a return</a><div>Order total $7.07</div></article>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders');
+  const [order] = api.getOrderCards();
+  assert.equal(order.url, 'https://www.walmart.com/orders/12345678901234567890?orderSource=STORE');
+  assert.equal(order.date, '2026-10-15');
+  assert.equal(order.total, '7.07');
+  dom.window.close();
+});
+
+test('a partial month-day date never masquerades as a complete purchase date', () => {
+  const html = '<article data-testid="order-card"><a href="/orders/12345678901234567890/returns">Return</a><div>Jan 31</div><div>Total $38.93</div></article>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders');
+  const [order] = api.getOrderCards();
+  assert.equal(order.date, '');
+  assert.equal(order.dateStatus, 'partial');
+  assert.equal(order.dateText, 'Jan 31');
+  assert.equal(order.url, 'https://www.walmart.com/orders/12345678901234567890');
+  dom.window.close();
+});
+
+test('machine-readable purchase dates override display dates missing a year', () => {
+  const html = '<article data-testid="order-card"><a href="/orders/12345678901234567890/returns">Return</a><span>Feb 5</span><time datetime="2025-02-05"></time><div>Total $128.85</div></article>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders');
+  const [order] = api.getOrderCards();
+  assert.equal(order.date, '2025-02-05');
+  dom.window.close();
+});
+
+test('validates full dates, including leap days, without inventing years', () => {
+  assert.equal(utils.normalizePurchaseDate('Oct 15, 2026'), '2026-10-15');
+  assert.equal(utils.normalizePurchaseDate('January 31'), '');
+  assert.equal(utils.normalizePurchaseDate('Feb 5'), '');
+  assert.equal(utils.normalizePurchaseDate('02/05/2025'), '2025-02-05');
+  assert.equal(utils.normalizePurchaseDate('2024-02-29'), '2024-02-29');
+  assert.equal(utils.normalizePurchaseDate('2025-02-29'), '');
+  assert.equal(utils.normalizePurchaseDate('02/05/25'), '');
+});
+
+test('migrates previously saved returns URLs and yearless dates in place', () => {
+  const orders = utils.normalizeSavedOrders({
+    '12345678901234567890': {
+      id: '12345678901234567890', url: 'https://www.walmart.com/orders/12345678901234567890/returns',
+      date: 'Jan 31', total: '38.93', items: []
+    }
+  });
+  const record = orders['12345678901234567890'];
+  assert.equal(record.url, 'https://www.walmart.com/orders/12345678901234567890');
+  assert.equal(record.date, '');
+  assert.equal(record.dateText, 'Jan 31');
+  assert.equal(record.dateStatus, 'partial');
+  assert.match(utils.ordersCsv(orders), /"partial","Jan 31"/);
+  assert.equal(utils.pendingOrders(orders).length, 1);
+});
+
+test('receipt details with a complete purchase date repair old partial dates', () => {
+  const old = {id: '12345678901234567890', url: 'https://www.walmart.com/orders/12345678901234567890/returns', date: 'Jan 31', items: [], detailsComplete: false};
+  const merged = utils.mergeDetail(old, {id: old.id, date: '2025-01-31', items: [{name: 'Food', qty: '1'}]});
+  assert.equal(merged.date, '2025-01-31');
+  assert.equal(merged.url, 'https://www.walmart.com/orders/12345678901234567890');
+  assert.equal(merged.dateStatus, 'complete');
+  assert.equal(utils.pendingOrders({[old.id]: merged}).length, 0);
+});
+
+test('receipt detail dates are recovered from order pages after incomplete history cards', () => {
+  const html = '<main><h2>Order details</h2><p>Order placed January 31, 2025</p><div>Order total $38.93</div></main>';
+  const {dom, api} = parser(html, 'https://www.walmart.com/orders/12345678901234567890');
+  const details = api.extractDetails();
+  assert.equal(details.date, '2025-01-31');
+  assert.equal(details.url, 'https://www.walmart.com/orders/12345678901234567890');
+  dom.window.close();
+});
+
+test('already itemized orders with no verified date remain eligible for date repair', () => {
+  const record = {id: '12345678901234567890', url: 'https://www.walmart.com/orders/12345678901234567890/returns', date: 'Feb 5', items: [{name: 'Bread'}], detailsComplete: true};
+  assert.equal(utils.pendingOrders({[record.id]: record}).length, 1);
 });

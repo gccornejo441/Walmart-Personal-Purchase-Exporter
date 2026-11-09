@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2 - 2026-11-09
+
+- Fixed returns links being saved as receipt links; links now point to canonical order details, retaining store context when present.
+- Exports only complete, validated purchase dates in YYYY-MM-DD format.
+- Added Date Status and Original Date Text CSV columns for auditing unresolved dates.
+- Normalizes existing saved order data without deleting purchases.
+- Receipt fetching now attempts to repair missing dates even when an order already has items.
+- Added regression tests for returns links, partial dates, timestamps, migration, and date recovery.
+- Added CI tests and a downloadable extension package artifact.
+
+# Changelog
+
 ## 1.1.1 - 2026-11-09
 
 - Made first-use steps clearer and explained the difference between Orders CSV and Items CSV.
